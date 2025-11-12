@@ -430,9 +430,9 @@ def webhook():
     return 'ok', 200
 
 if __name__ == "__main__":
-    print("Бот запущен!")
-    if WEBHOOK_URL:
-        bot.remove_webhook()
-        bot.set_webhook(url=WEBHOOK_URL)
-        print(f"Webhook: {WEBHOOK_URL}")
-    app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 5000)))
+    print("Бот запущен в режиме polling (без webhook)")
+    try:
+        bot.infinity_polling()
+    except Exception as e:
+        print(f"Ошибка polling: {e}")
+        time.sleep(5)
