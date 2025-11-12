@@ -6,25 +6,21 @@ import sqlite3
 from telebot import TeleBot, types
 from telebot.handler_backends import State, StatesGroup
 from telebot.storage import StateRedisStorage
-from urllib.parse import urlparse  # <-- Для парсинга REDIS_URL
-from flask import Flask, request
+from urllib.parse import urlparse
 
-# Настройка логирования
+# === ЛОГИРОВАНИЕ ===
 logging.basicConfig(level=logging.INFO)
 print("Начало инициализации бота...")
 
 # === ПЕРЕМЕННЫЕ ОКРУЖЕНИЯ ===
 TOKEN = os.getenv("BOT_TOKEN")
-ADMIN_ID = os.getenv("ADMIN_ID")
+ADMIN_ID = int(os.getenv("ADMIN_ID"))  # <-- int!
 REDIS_URL = os.getenv("REDIS_URL")
-WEBHOOK_URL = os.getenv("WEBHOOK_URL")
 
 print(f"Токен: {'Да' if TOKEN else 'НЕТ'}")
 print(f"Админ ID: {ADMIN_ID}")
 print(f"Redis URL: {'Да' if REDIS_URL else 'НЕТ'}")
-print(f"Webhook: {WEBHOOK_URL}")
 
-# === ПРОВЕРКА ОБЯЗАТЕЛЬНЫХ ПЕРЕМЕННЫХ ===
 if not TOKEN or not ADMIN_ID or not REDIS_URL:
     print("ОШИБКА: Не хватает BOT_TOKEN, ADMIN_ID или REDIS_URL")
     exit(1)
@@ -36,7 +32,7 @@ try:
     redis_port = parsed.port or 6379
     redis_password = parsed.password
     redis_db = int(parsed.path.lstrip('/')) if parsed.path else 0
-    print(f"Redis подключение: {redis_host}:{redis_port}, db={redis_db}")
+    print(f"Redis: {redis_host}:{redis_port}, db={redis_db}")
 except Exception as e:
     print(f"Ошибка парсинга REDIS_URL: {e}")
     exit(1)
@@ -239,14 +235,14 @@ user_selections = {}
 # === АДМИНКА ===
 @bot.message_handler(commands=['admin'])
 def admin_panel(msg):
-    if str(msg.from_user.id) != ADMIN_ID:
+    if msg.from_user.id != ADMIN_ID:
         bot.send_message(msg.chat.id, "Нет доступа")
         return
     kb = types.ReplyKeyboardMarkup(resize_keyboard=True)
     kb.add("Статистика", "Рассылка", "Список пользователей", "Выйти из админки")
     bot.send_message(msg.chat.id, f"<b>Админ-панель</b>\nПользователей: {len(get_all_users())}", parse_mode="HTML", reply_markup=kb)
 
-@bot.message_handler(func=lambda m: m.text == "Статистика" and str(m.from_user.id) == ADMIN_ID)
+@bot.message_handler(func=lambda m: m.text == "Статистика" and m.from_user.id == ADMIN_ID)
 def show_stats(msg):
     users = get_all_users()
     today = datetime.datetime.now().date()
@@ -254,7 +250,22 @@ def show_stats(msg):
     total_messages = sum(u.get('messages_count', 0) for u in users.values())
     bot.send_message(msg.chat.id, f"<b>Статистика</b>\nВсего: {len(users)}\nСегодня: {active_today}\nСообщений: {total_messages}", parse_mode="HTML")
 
-@bot.message_handler(func=lambda m: m.text == "Рассылка" and str(m.from_user.id) == ADMIN_ID)
+@bot.message_handler(func=lambda m: m.text == "Список пользователей" and m.from_user.id == ADMIN_ID)
+def show_users_list(msg):
+    users = get_all_users()
+    if not users:
+        bot.send_message(msg.chat.id, "Пользователей нет")
+        return
+    sorted_users = sorted(users.items(), key=lambda x: x[1]['last_activity'], reverse=True)
+    text = "<b>Последние пользователи:</b>\n\n"
+    for i, (uid, data) in enumerate(sorted_users[:10], 1):
+        text += f"{i}. {data['full_name']}\n"
+        text += f"   @{data['username'] or 'нет'}\n"
+        text += f"   ID: {uid}\n"
+        text += f"   Сообщений: {data['messages_count']}\n\n"
+    bot.send_message(msg.chat.id, text, parse_mode="HTML")
+
+@bot.message_handler(func=lambda m: m.text == "Рассылка" and m.from_user.id == ADMIN_ID)
 def start_broadcast(msg):
     total = len(get_all_users())
     if total == 0:
@@ -299,7 +310,7 @@ def cancel_broadcast(call):
     bot.delete_state(call.from_user.id, call.message.chat.id)
     bot.edit_message_text("Отменено", call.message.chat.id, call.message.message_id)
 
-@bot.message_handler(func=lambda m: m.text == "Выйти из админки" and str(m.from_user.id) == ADMIN_ID)
+@bot.message_handler(func=lambda m: m.text == "Выйти из админки" and m.from_user.id == ADMIN_ID)
 def exit_admin(msg):
     kb = types.ReplyKeyboardMarkup(resize_keyboard=True)
     kb.add("Каталог", "Позвать специалиста", "О нас")
@@ -420,15 +431,7 @@ def save_order(msg):
 def track(msg):
     update_user_activity(msg.from_user.id)
 
-# === WEBHOOK ===
-app = Flask(__name__)
-
-@app.route('/bot', methods=['POST'])
-def webhook():
-    update = types.Update.de_json(request.stream.read().decode('utf-8'))
-    bot.process_new_updates([update])
-    return 'ok', 200
-
+# === ЗАПУСК В РЕЖИМЕ POLLING ===
 if __name__ == "__main__":
     print("Бот запущен в режиме polling (без webhook)")
     try:
