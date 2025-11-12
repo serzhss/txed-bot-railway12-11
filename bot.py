@@ -11,8 +11,8 @@ from telebot.storage import StateMemoryStorage
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-TOKEN = os.getenv("BOT_TOKEN") or "ВАШ_ТОКЕН"
-ADMIN_ID = int(os.getenv("ADMIN_ID") or "ВАШ_ADMIN_ID")
+TOKEN = os.getenv("BOT_TOKEN") or "7819916914:AAHuOv_6eph7IZ2OYyqq-zKz22yr_G4MIPk"
+ADMIN_ID = int(os.getenv("ADMIN_ID") or "445570258")
 
 storage = StateMemoryStorage()
 bot = TeleBot(TOKEN, state_storage=storage)
@@ -239,3 +239,4 @@ if __name__=="__main__":
     ensure_users_file()
     print("Бот запущен")
     bot.infinity_polling()
+
