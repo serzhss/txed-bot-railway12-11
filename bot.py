@@ -5,38 +5,59 @@ import time
 import sqlite3
 from telebot import TeleBot, types
 from telebot.handler_backends import State, StatesGroup
-from telebot.storage import StateRedisStorage  # <-- Redis!
+from telebot.storage import StateRedisStorage
+from urllib.parse import urlparse  # <-- Для парсинга REDIS_URL
 from flask import Flask, request
 
 # Настройка логирования
 logging.basicConfig(level=logging.INFO)
 print("Начало инициализации бота...")
 
-# Переменные окружения
+# === ПЕРЕМЕННЫЕ ОКРУЖЕНИЯ ===
 TOKEN = os.getenv("BOT_TOKEN")
-ADMIN_ID = int(os.getenv("ADMIN_ID")) if os.getenv("ADMIN_ID") else None
+ADMIN_ID = os.getenv("ADMIN_ID")
 REDIS_URL = os.getenv("REDIS_URL")
 WEBHOOK_URL = os.getenv("WEBHOOK_URL")
 
 print(f"Токен: {'Да' if TOKEN else 'НЕТ'}")
 print(f"Админ ID: {ADMIN_ID}")
-print(f"Redis: {'Да' if REDIS_URL else 'НЕТ'}")
+print(f"Redis URL: {'Да' if REDIS_URL else 'НЕТ'}")
 print(f"Webhook: {WEBHOOK_URL}")
 
+# === ПРОВЕРКА ОБЯЗАТЕЛЬНЫХ ПЕРЕМЕННЫХ ===
 if not TOKEN or not ADMIN_ID or not REDIS_URL:
-    print("ОШИБКА: Проверьте BOT_TOKEN, ADMIN_ID, REDIS_URL")
+    print("ОШИБКА: Не хватает BOT_TOKEN, ADMIN_ID или REDIS_URL")
     exit(1)
 
+# === ПАРСИНГ REDIS_URL ===
 try:
-    storage = StateRedisStorage(url=REDIS_URL)
+    parsed = urlparse(REDIS_URL)
+    redis_host = parsed.hostname or 'localhost'
+    redis_port = parsed.port or 6379
+    redis_password = parsed.password
+    redis_db = int(parsed.path.lstrip('/')) if parsed.path else 0
+    print(f"Redis подключение: {redis_host}:{redis_port}, db={redis_db}")
+except Exception as e:
+    print(f"Ошибка парсинга REDIS_URL: {e}")
+    exit(1)
+
+# === ИНИЦИАЛИЗАЦИЯ БОТА С REDIS ===
+try:
+    storage = StateRedisStorage(
+        host=redis_host,
+        port=redis_port,
+        password=redis_password,
+        db=redis_db
+    )
     bot = TeleBot(TOKEN, state_storage=storage)
     print("Бот инициализирован с Redis")
 except Exception as e:
-    print(f"Ошибка бота: {e}")
+    print(f"Ошибка инициализации бота: {e}")
     exit(1)
 
-# База данных
+# === БАЗА ДАННЫХ ===
 DB_FILE = "users.db"
+
 def ensure_users_db():
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
@@ -55,6 +76,7 @@ def ensure_users_db():
     conn.commit()
     conn.close()
     print(f"БД {DB_FILE} готова")
+
 ensure_users_db()
 
 # === ПОЛЬЗОВАТЕЛИ ===
@@ -84,9 +106,11 @@ def save_users(users):
         for uid, data in users.items():
             cursor.execute('''
                 INSERT OR REPLACE INTO users VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            ''', (uid, data.get('username'), data.get('first_name'), data.get('last_name'),
-                  data.get('full_name'), data.get('first_seen'), data.get('last_activity'),
-                  data.get('messages_count')))
+            ''', (
+                uid, data.get('username'), data.get('first_name'), data.get('last_name'),
+                data.get('full_name'), data.get('first_seen'), data.get('last_activity'),
+                data.get('messages_count')
+            ))
         conn.commit()
         conn.close()
         return True
@@ -102,7 +126,8 @@ def add_user(user_id, username, first_name, last_name):
         users[uid].update({
             'username': username, 'first_name': first_name, 'last_name': last_name,
             'full_name': f"{first_name} {last_name or ''}".strip(),
-            'last_activity': now, 'messages_count': users[uid].get('messages_count', 0) + 1
+            'last_activity': now,
+            'messages_count': users[uid].get('messages_count', 0) + 1
         })
     else:
         users[uid] = {
@@ -129,9 +154,6 @@ def update_user_activity(user_id):
 class AdminForm(StatesGroup):
     waiting_for_broadcast_message = State()
 
-user_photo_index = {}
-user_selections = {}
-
 # === КАТАЛОГ ===
 bikes = {
     "PRIMO": {
@@ -147,25 +169,12 @@ bikes = {
             "https://optim.tildacdn.com/tild3734-6433-4835-b639-623036366165/-/format/webp/Photo-57.webp"
         ],
         "specs": {
-            "Вилка": "UDING DS HLO",
-            "Передний переключатель": "SHIMANO ALTUS M315",
-            "Задний переключатель": "SHIMANO ALTUS M310",
-            "Шифтеры": "SHIMANO ALTUS M315 2x8s",
-            "Тормоза": "SHIMANO MT 200",
-            "Кассета": "SHIMANO CS-HG-41-8 11-34T",
-            "Цепь": "TEC C8 16S",
-            "Система": "PROWHEEL CY-10TM",
-            "Картридж": "GINEYEA BB73 68mm",
-            "Ротор": "SHIMANO RT-26S 160мм",
-            "Втулки": "SOLON 901F/R AL",
-            "Обода": "HENGTONG HLQC-GA10",
-            "Покрышки": "KENDA K1162",
-            "Руль": "ZOOM MTB AL 31,8 720/760мм",
-            "Вынос": "ZOOM TDS-C301",
-            "Грипсы": "VELO VLG-609",
-            "Рулевая колонка": "GINEYEA GH-830",
-            "Седло": "VELO VL-3534",
-            "Подседельный штырь": "ZOOM SP-C212",
+            "Вилка": "UDING DS HLO", "Передний переключатель": "SHIMANO ALTUS M315", "Задний переключатель": "SHIMANO ALTUS M310",
+            "Шифтеры": "SHIMANO ALTUS M315 2x8s", "Тормоза": "SHIMANO MT 200", "Кассета": "SHIMANO CS-HG-41-8 11-34T",
+            "Цепь": "TEC C8 16S", "Система": "PROWHEEL CY-10TM", "Картридж": "GINEYEA BB73 68mm", "Ротор": "SHIMANO RT-26S 160мм",
+            "Втулки": "SOLON 901F/R AL", "Обода": "HENGTONG HLQC-GA10", "Покрышки": "KENDA K1162",
+            "Руль": "ZOOM MTB AL 31,8 720/760мм", "Вынос": "ZOOM TDS-C301", "Грипсы": "VELO VLG-609",
+            "Рулевая колонка": "GINEYEA GH-830", "Седло": "VELO VL-3534", "Подседельный штырь": "ZOOM SP-C212",
             "Педали": "FENGDE NW-430"
         }
     },
@@ -224,18 +233,20 @@ bikes = {
 }
 
 frame_sizes = {"M (17\")": "163-177 см", "L (19\")": "173-187 см", "XL (21\")": "182-197 см"}
+user_photo_index = {}
+user_selections = {}
 
 # === АДМИНКА ===
 @bot.message_handler(commands=['admin'])
 def admin_panel(msg):
-    if msg.from_user.id != ADMIN_ID:
+    if str(msg.from_user.id) != ADMIN_ID:
         bot.send_message(msg.chat.id, "Нет доступа")
         return
     kb = types.ReplyKeyboardMarkup(resize_keyboard=True)
     kb.add("Статистика", "Рассылка", "Список пользователей", "Выйти из админки")
     bot.send_message(msg.chat.id, f"<b>Админ-панель</b>\nПользователей: {len(get_all_users())}", parse_mode="HTML", reply_markup=kb)
 
-@bot.message_handler(func=lambda m: m.text == "Статистика" and m.from_user.id == ADMIN_ID)
+@bot.message_handler(func=lambda m: m.text == "Статистика" and str(m.from_user.id) == ADMIN_ID)
 def show_stats(msg):
     users = get_all_users()
     today = datetime.datetime.now().date()
@@ -243,7 +254,7 @@ def show_stats(msg):
     total_messages = sum(u.get('messages_count', 0) for u in users.values())
     bot.send_message(msg.chat.id, f"<b>Статистика</b>\nВсего: {len(users)}\nСегодня: {active_today}\nСообщений: {total_messages}", parse_mode="HTML")
 
-@bot.message_handler(func=lambda m: m.text == "Рассылка" and m.from_user.id == ADMIN_ID)
+@bot.message_handler(func=lambda m: m.text == "Рассылка" and str(m.from_user.id) == ADMIN_ID)
 def start_broadcast(msg):
     total = len(get_all_users())
     if total == 0:
@@ -288,7 +299,7 @@ def cancel_broadcast(call):
     bot.delete_state(call.from_user.id, call.message.chat.id)
     bot.edit_message_text("Отменено", call.message.chat.id, call.message.message_id)
 
-@bot.message_handler(func=lambda m: m.text == "Выйти из админки" and m.from_user.id == ADMIN_ID)
+@bot.message_handler(func=lambda m: m.text == "Выйти из админки" and str(m.from_user.id) == ADMIN_ID)
 def exit_admin(msg):
     kb = types.ReplyKeyboardMarkup(resize_keyboard=True)
     kb.add("Каталог", "Позвать специалиста", "О нас")
