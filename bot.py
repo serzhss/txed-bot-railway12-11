@@ -242,7 +242,7 @@ def admin_panel(msg):
     kb.add("Статистика", "Рассылка", "Список пользователей", "Выйти из админки")
     bot.send_message(msg.chat.id, f"<b>Админ-панель</b>\nПользователей: {len(get_all_users())}", parse_mode="HTML", reply_markup=kb)
 
-@bot.message_handler(func=lambda m: m.text == "Статистика" and m.from_user.id == ADMIN_ID)
+@bot.message_handler(func=lambda m: m.text and m.text == "Статистика" and m.from_user.id == ADMIN_ID)
 def show_stats(msg):
     users = get_all_users()
     today = datetime.datetime.now().date()
@@ -250,7 +250,7 @@ def show_stats(msg):
     total_messages = sum(u.get('messages_count', 0) for u in users.values())
     bot.send_message(msg.chat.id, f"<b>Статистика</b>\nВсего: {len(users)}\nСегодня: {active_today}\nСообщений: {total_messages}", parse_mode="HTML")
 
-@bot.message_handler(func=lambda m: m.text == "Список пользователей" and m.from_user.id == ADMIN_ID)
+@bot.message_handler(func=lambda m: m.text and m.text == "Список пользователей" and m.from_user.id == ADMIN_ID)
 def show_users_list(msg):
     users = get_all_users()
     if not users:
@@ -265,7 +265,7 @@ def show_users_list(msg):
         text += f"   Сообщений: {data['messages_count']}\n\n"
     bot.send_message(msg.chat.id, text, parse_mode="HTML")
 
-@bot.message_handler(func=lambda m: m.text == "Рассылка" and m.from_user.id == ADMIN_ID)
+@bot.message_handler(func=lambda m: m.text and m.text == "Рассылка" and m.from_user.id == ADMIN_ID)
 def start_broadcast(msg):
     total = len(get_all_users())
     if total == 0:
@@ -310,7 +310,7 @@ def cancel_broadcast(call):
     bot.delete_state(call.from_user.id, call.message.chat.id)
     bot.edit_message_text("Отменено", call.message.chat.id, call.message.message_id)
 
-@bot.message_handler(func=lambda m: m.text == "Выйти из админки" and m.from_user.id == ADMIN_ID)
+@bot.message_handler(func=lambda m: m.text and m.text == "Выйти из админки" and m.from_user.id == ADMIN_ID)
 def exit_admin(msg):
     kb = types.ReplyKeyboardMarkup(resize_keyboard=True)
     kb.add("Каталог", "Позвать специалиста", "О нас")
@@ -439,3 +439,4 @@ if __name__ == "__main__":
     except Exception as e:
         print(f"Ошибка polling: {e}")
         time.sleep(5)
+
