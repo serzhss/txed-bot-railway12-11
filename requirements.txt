@@ -1,3 +1,2 @@
-pyTelegramBotAPI==4.19.1
-redis==5.0.1
-
+pyTelegramBotAPI
+redis
